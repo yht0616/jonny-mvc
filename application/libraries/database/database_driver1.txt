@@ -1,0 +1,26 @@
+<?php
+
+namespace application\libraries\databases;
+
+interface database_drivers {
+
+	public function __construct();
+
+	public function connect();
+
+	public function create_database($name);
+
+	public function create_table($name, $array_with_values, $primary_key_key = NULL);
+
+	public function select($columns, $table_name, $where = NULL, $order_by = NULL);
+
+	public function insert($table_name, $array_with_values);
+
+	public function remove();
+
+	public function update();
+
+	public function use_database($name);
+
+	public function disconnect();
+}

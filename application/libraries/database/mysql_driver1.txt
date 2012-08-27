@@ -1,0 +1,237 @@
+<?php
+
+namespace application\libraries\databases;
+
+class mysql_drivers implements database_driver {
+
+	private $host, $username, $password;
+	private $database_connect;
+	private $configuration;
+	private $database_name;
+
+	public function __construct() {
+		$database_configuration = new \setup\configuration\database();
+		switch ($database_configuration->use) {
+			case 'testing':
+				$this->configuration = $database_configuration->testing;
+				break;
+			case 'development':
+				$this->configuration = $database_configuration->development;
+				break;
+			case 'production':
+				$this->configuration = $database_configuration->production;
+				break;
+			default:
+				$error_message = 'Could not get the database configurations';
+				$log_error = new \application\core\error_log($error_message, 'logic', __FILE__);
+				$log_error->do_error_log();
+				break;
+		}
+
+		$this->host = $this->configuration['host'];
+		$this->username = $this->configuration['username'];
+		$this->password = $this->configuration['password'];
+	}
+
+	public function connect() {
+		if ($this->configuration['persistent'] === FALSE) {
+			$this->database_connect = mysql_connect($this->host, $this->username, $this->password);
+			if ($this->database_connect === FALSE) {
+				$error_message = 'Could not connect to the host "' . $this->host . '" with the username @' . $this->username;
+				$log_error = new \application\core\error_log($error_message, 'database', __FILE__);
+				$log_error->do_error_log();
+			} else {
+				return TRUE;
+			}
+		} elseif ($this->configuration['persistent'] === TRUE) {
+			$this->database_connect = mysql_pconnect($this->host, $this->username, $this->password);
+			if ($this->database_connect === FALSE) {
+				$error_message = 'Could not connect persistently to the host "' . $this->host . '" with the username @' . $this->username;
+				$log_error = new \application\core\error_log($error_message, 'database', __FILE__);
+				$log_error->do_error_log();
+			} else {
+				return TRUE;
+			}
+		}
+	}
+
+	public function create_database($name) {
+		$sql_query = 'CREATE DATABASE ' . $name . ';';
+
+		$result = mysql_query($sql_query, $this->database_connect);
+		if ($result === FALSE) {
+			$error_message = 'Could not create the database "' . $name . '" on "' . $this->host . '"';
+			$log_error = new \application\core\error_log($error_message, 'database', __FILE__);
+			$log_error->do_error_log();
+		} else {
+			return TRUE;
+		}
+	}
+
+	public function use_database($name) {
+		$this->database_name = $name;
+
+		$use_database = mysql_select_db($this->database_name, $this->database_connect);
+		if ($use_database === FALSE) {
+			$error_message = 'Could not use the database "' . $this->database_name . '" on "' . $this->host . '"';
+			$log_error = new \application\core\error_log($error_message, 'database', __FILE__);
+			$log_error->do_error_log();
+		} else {
+			return TRUE;
+		}
+	}
+
+	public function create_table($name, $array_with_values, $primary_key_key = NULL) {
+		$sql_query = 'CREATE TABLE ' . $name . '(';
+		foreach ($array_with_values as $key => $value) {
+			$sql_query .= $key . ' ' . $value . ', ';
+
+			if ($key === $primary_key_key) {
+				$sql_query .= 'PRIMARY KEY(' . $key . '), ';
+			}
+		}
+		$sql_query = rtrim($sql_query, ', ');
+		$sql_query .= ');';
+
+		$result = mysql_query($sql_query, $this->database_connect);
+		if ($result === FALSE) {
+			$error_message = 'Could not create the table "' . $this->database_name . '::' . $name . '" on "' . $this->host . '"';
+			$log_error = new \application\core\error_log($error_message, 'database', __FILE__);
+			$log_error->do_error_log();
+		} else {
+			return TRUE;
+		}
+	}
+
+	public function create_table_alter_if_exists($name, $array_with_values, $primary_key_key = NULL) {
+		$sql_query = 'SHOW COLUMNS FROM ' . $name . ';';
+		$result = mysql_query($sql_query, $this->database_connect);
+		if ($result === FALSE) {
+			$error_message = 'Could not select the data from the table "' . $this->database_name . '::' . $name . '" on "' . $this->host . '"';
+			$log_error = new \application\core\error_log($error_message, 'database', __FILE__);
+			$log_error->do_error_log();
+
+			$sql_query = 'CREATE TABLE ' . $name . '(';
+			foreach ($array_with_values as $key => $value) {
+				$sql_query .= $key . ' ' . $value . ', ';
+
+				if ($key === $primary_key_key) {
+					$sql_query .= 'PRIMARY KEY(' . $key . '), ';
+				}
+			}
+			$sql_query = rtrim($sql_query, ', ');
+			$sql_query .= ');';
+
+			$result = mysql_query($sql_query, $this->database_connect);
+			if ($result === FALSE) {
+				$error_message = 'Could not create the table "' . $this->database_name . '::' . $name . '" on "' . $this->host . '"';
+				$log_error = new \application\core\error_log($error_message, 'database', __FILE__);
+				$log_error->do_error_log();
+			} else {
+				return TRUE;
+			}
+		} else {
+			$column = array();
+			while ($row = mysql_fetch_assoc($result)) {
+				array_push($column, $row['Field']);
+			}
+			$row = $column;
+			var_dump($row);
+
+			foreach ($array_with_values as $key => $value) {
+				if (in_array($key, $row) === TRUE) {
+					$sql_query = 'ALTER TABLE ' . $name . ' ALTER COLUMN ' . $key . ' ' . $value . ';';
+					$result = mysql_query($sql_query, $this->database_connect);
+					if ($result === FALSE) {
+						$error_message = 'Could alter the table "' . $this->database_name . '::' . $name . '" on "' . $this->host . '"';
+						$log_error = new \application\core\error_log($error_message, 'database', __FILE__ . ':' . __LINE__);
+						$log_error->do_error_log();
+					}
+				} else {
+					$sql_query = 'ALTER TABLE ' . $name . ' ADD ' . $key . ' ' . $value . ';';
+					$result = mysql_query($sql_query, $this->database_connect);
+					if ($result === FALSE) {
+						$error_message = 'Could alter the table "' . $this->database_name . '::' . $name . '" on "' . $this->host . '"';
+						$log_error = new \application\core\error_log($error_message, 'database', __FILE__ . ':' . __LINE__);
+						$log_error->do_error_log();
+					}
+				}
+				print $sql_query . '<br />';
+			}
+		}
+	}
+
+	public function select($columns, $table_name, $where = NULL, $order_by = NULL) {
+		$sql_query = 'SELECT';
+		if (is_array($columns) === FALSE) {
+			$sql_query .= ' ' . $columns;
+		} elseif (is_array($columns) === TRUE) {
+			for ($i = 0; $i === (count($columns) - 1); $i++) {
+				$sql_query .= ' ' . $columns[$i];
+			}
+		}
+		$sql_query .= ' FROM ' . $table_name;
+		if ($where !== NULL) {
+			$sql_query .= ' WHERE ' . $where;
+		}
+		if ($order_by !== NULL) {
+			$sql_query .= ' ORDER BY ' . $order_by;
+		}
+		$sql_query .= ';';
+
+		$result = mysql_query($sql_query, $this->database_connect);
+		if ($result === FALSE) {
+			$error_message = 'Could not select the data from the table "' . $this->database_name . '::' . $table_name . '" on "' . $this->host . '"';
+			$log_error = new \application\core\error_log($error_message, 'database', __FILE__);
+			$log_error->do_error_log();
+		} else {
+			$row = mysql_fetch_array($result);
+			while ($row !== FALSE) {
+				return $row;
+			}
+		}
+	}
+
+	public function insert($table_name, $array_with_values) {
+		$sql_query = 'INSERT INTO ' . $table_name . ' (';
+		foreach ($array_with_values as $key => $value) {
+			$sql_query .= $key . ', ';
+		}
+		$sql_query = rtrim($sql_query, ', ');
+		$sql_query .= ') VALUES (';
+		foreach ($array_with_values as $key => $value) {
+			$sql_query .= $value . ', ';
+		}
+		$sql_query = rtrim($sql_query, ', ');
+		$sql_query .= ');';
+
+		$result = mysql_query($sql_query, $this->database_connect);
+		if ($result === FALSE) {
+			$error_message = 'Could not insert the data into the table "' . $this->database_name . '::' . $table_name . '" on "' . $this->host . '"';
+			$log_error = new \application\core\error_log($error_message, 'database', __FILE__);
+			$log_error->do_error_log();
+		} else {
+			return TRUE;
+		}
+	}
+
+	public function remove() {
+
+	}
+
+	public function update() {
+
+	}
+
+	public function disconnect() {
+		$close_database = mysql_close($this->database_connect);
+		if ($close_database === FALSE) {
+			$error_message = 'Could not disconnect from the database on "' . $this->host . '"';
+			$log_error = new \application\core\error_log($error_message, 'database', __FILE__);
+			$log_error->do_error_log();
+		} else {
+			return TRUE;
+		}
+	}
+
+}
